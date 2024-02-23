@@ -1,55 +1,113 @@
-# K-Means Clustering
-
-# Importing the libraries
 import numpy as np
-import matplotlib.pyplot as plt
-import pandas as pd
-import os
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import DataLoader, TensorDataset
+from sklearn.model_selection import train_test_split
 
-# Importing the dataset
-data_path = "./nonce/model/Mall_Customers.csv"
-dataset = pd.read_csv(data_path)
-X = dataset.iloc[:, [3, 4]].values
-# y = dataset.iloc[:, 3].values
+batch_size = 256
 
-# Splitting the dataset into the Training set and Test set
-"""from sklearn.cross_validation import train_test_split
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size = 0.2, random_state = 0)"""
+# Generate randomly unlabeled data
+num_samples = 10000000  # Adjust the number of samples as needed
+X_unlabeled = np.random.randint(0, 128, size=(num_samples, 2))  # Generate random features within the range [0, 127]
 
-# Feature Scaling
-"""from sklearn.preprocessing import StandardScaler
-sc_X = StandardScaler()
-X_train = sc_X.fit_transform(X_train)
-X_test = sc_X.transform(X_test)
-sc_y = StandardScaler()
-y_train = sc_y.fit_transform(y_train)"""
+# Convert NumPy arrays to PyTorch tensors
+X_unlabeled_tensor = torch.tensor(X_unlabeled, dtype=torch.float32) / 127
 
-# Using the elbow method to find the optimal number of clusters
-from sklearn.cluster import KMeans
-wcss = []
-for i in range(1, 11):
-    kmeans = KMeans(n_clusters = i, init = 'k-means++', random_state = 42)
-    kmeans.fit(X)
-    wcss.append(kmeans.inertia_)
-plt.plot(range(1, 11), wcss)
-plt.title('The Elbow Method')
-plt.xlabel('Number of clusters')
-plt.ylabel('WCSS')
-plt.show()
+# Load labeled data
+labeled_data = np.load("database/mining_data.npy")
+X_labeled = labeled_data[:, 1:]  # Features: b0, b3
+y_labeled = labeled_data[:, 0]   # Labels: ASIC type
 
-# Fitting K-Means to the dataset
-kmeans = KMeans(n_clusters = 5, init = 'k-means++', random_state = 42)
-y_kmeans = kmeans.fit_predict(X)
+# Convert NumPy arrays to PyTorch tensors
+X_labeled_tensor = torch.tensor(X_labeled, dtype=torch.float32) / 127
+y_labeled_tensor = torch.tensor(y_labeled, dtype=torch.long)
 
-# Visualising the clusters
-plt.scatter(X[y_kmeans == 0, 0], X[y_kmeans == 0, 1], s = 100, c = 'red', label = 'Cluster 1')
-plt.scatter(X[y_kmeans == 1, 0], X[y_kmeans == 1, 1], s = 100, c = 'blue', label = 'Cluster 2')
-plt.scatter(X[y_kmeans == 2, 0], X[y_kmeans == 2, 1], s = 100, c = 'green', label = 'Cluster 3')
-plt.scatter(X[y_kmeans == 3, 0], X[y_kmeans == 3, 1], s = 100, c = 'cyan', label = 'Cluster 4')
-plt.scatter(X[y_kmeans == 4, 0], X[y_kmeans == 4, 1], s = 100, c = 'magenta', label = 'Cluster 5')
-plt.scatter(kmeans.cluster_centers_[:, 0], kmeans.cluster_centers_[:, 1], s = 300, c = 'yellow', label = 'Centroids')
-plt.title('Clusters of customers')
-plt.xlabel('Annual Income (k$)')
-plt.ylabel('Spending Score (1-100)')
-plt.legend()
-plt.show()
+print("labeled data size = {}".format(X_labeled_tensor.size()))
+
+# Use CUDA if available
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# Move tensors to GPU if available
+X_unlabeled_tensor = X_unlabeled_tensor.to(device)
+X_labeled_tensor = X_labeled_tensor.to(device)
+y_labeled_tensor = y_labeled_tensor.to(device)
+
+# Define a simple neural network model
+class ClusterNN(nn.Module):
+    def __init__(self):
+        super(ClusterNN, self).__init__()
+        self.fc1 = nn.Linear(2, 128)
+        self.bn1 = nn.BatchNorm1d(128)
+        self.dropout1 = nn.Dropout(0.2)  # Dropout with 20% probability
+        self.fc2 = nn.Linear(128, 256)
+        self.bn2 = nn.BatchNorm1d(256)
+        self.dropout2 = nn.Dropout(0.2)  # Dropout with 20% probability
+        self.fc3 = nn.Linear(256, 128)
+        self.bn3 = nn.BatchNorm1d(128)
+        self.dropout3 = nn.Dropout(0.2)  # Dropout with 20% probability
+        self.fc4 = nn.Linear(128, 20)  
+
+    def forward(self, x):
+        x = torch.relu(self.bn1(self.fc1(x)))
+        x = self.dropout1(x)
+        x = torch.relu(self.bn2(self.fc2(x)))
+        x = self.dropout2(x)
+        x = torch.relu(self.bn3(self.fc3(x)))
+        x = self.dropout3(x)
+        x = torch.softmax(self.fc4(x), dim=1)
+        return x
+    
+# Initialize the model and move to GPU if available
+model = ClusterNN().to(device)
+
+# Define loss function and optimizer
+criterion = nn.CrossEntropyLoss()
+optimizer = optim.Adam(model.parameters(), lr=0.001)
+
+# Training loop with pseudo-labeling
+num_epochs = 30
+for epoch in range(num_epochs):
+    print(f"Epoch [{epoch+1}/{num_epochs}]")
+    model.train()
+    running_loss = 0.0
+
+    # Train with labeled data
+    for inputs, labels in DataLoader(TensorDataset(X_labeled_tensor, y_labeled_tensor), batch_size=batch_size, shuffle=True):
+        optimizer.zero_grad()
+        outputs = model(inputs)
+        loss = criterion(outputs, labels)
+        loss.backward()
+        optimizer.step()
+        running_loss += loss.item() * inputs.size(0)
+    
+    print(f"  Labeled data training loss: {running_loss / len(X_labeled_tensor)}")
+
+    # Predict pseudo-labels for unlabeled data
+    model.eval()
+    with torch.no_grad():
+        outputs_unlabeled = model(X_unlabeled_tensor)
+        _, pseudo_labels = torch.max(outputs_unlabeled, 1)
+
+    # Combine labeled and pseudo-labeled data
+    combined_data = torch.cat((X_unlabeled_tensor, X_labeled_tensor), dim=0)
+    combined_labels = torch.cat((pseudo_labels, y_labeled_tensor), dim=0)
+
+    # Move combined data to GPU if available
+    combined_data = combined_data.to(device)
+    combined_labels = combined_labels.to(device)
+
+    # Train with combined data
+    running_loss = 0.0
+    for inputs, labels in DataLoader(TensorDataset(combined_data, combined_labels), batch_size=batch_size, shuffle=True):
+        optimizer.zero_grad()
+        outputs = model(inputs)
+        loss = criterion(outputs, labels)
+        loss.backward()
+        optimizer.step()
+        running_loss += loss.item() * inputs.size(0)
+
+    print(f"  Combined data training loss: {running_loss / (len(X_labeled_tensor) + len(X_unlabeled_tensor))}")
+
+# Save the trained model
+torch.save(model.state_dict(), 'ssl_model.pth')

@@ -140,5 +140,5 @@ dmypy.json
 
 # MacOS system file
 .DS_Store
-/NoceData160224
-/database
+/database/nonce_log
+database/mining_data.npy

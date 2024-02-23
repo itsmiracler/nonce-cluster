@@ -30,7 +30,7 @@ def scan_log_files(directory, out_dir, chunk_size=500000):
                                 nonce = params[4]
                                 b0, b3 = get_b03(nonce)
 
-                                mining_data.append({"Pool Name": pool_name, "Nonce": nonce, "b0": b0, "b3": b3})
+                                mining_data.append({"Nonce": nonce, "b0": b0, "b3": b3})
                             
                                 # Save the data to a new Excel file if chunk size is reached
                                 if len(mining_data) >= chunk_size:
@@ -47,17 +47,17 @@ def scan_log_files(directory, out_dir, chunk_size=500000):
 
 def save_to_excel(data, chunk_count, folder_name, out_dir):
     mining_df = pd.DataFrame(data)
-    excel_file_name = f"mining_results_{chunk_count}_in_{os.path.basename(folder_name)}.xlsx"
+    excel_file_name = f"{os.path.basename(folder_name)}_ND_{chunk_count}.xlsx"
     excel_file_path = os.path.join(out_dir, excel_file_name)
     mining_df.to_excel(excel_file_path, index=False)
     print(f"{excel_file_name} saved")
 
 # Specify the directory containing the log files
-log_directory = os.path.join(os.getcwd(), "database/NonceData160224") 
-print(log_directory)
+log_directory = os.path.join(os.getcwd(), "database/preprocessed1") 
 
 out_directory = os.path.join(os.getcwd(), "database/filtered") 
-print(out_directory)
+if (not os.path.isdir(out_directory)):
+    os.mkdir(out_directory)
 
 # Call the function to scan log files
 scan_log_files(log_directory, out_directory)
