@@ -1,12 +1,8 @@
 import os
 import json
 import pandas as pd
+from common import *
 
-def get_b03(nonce):
-    x = int(nonce, 16)
-    b0 = x >> 25
-    b3 = x >> 1 & 0x7F 
-    return b0, b3
 
 def scan_log_files(directory, out_dir, chunk_size=500000):
     for root, dirs, files in os.walk(directory):

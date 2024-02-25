@@ -2,16 +2,10 @@ import os
 import json
 import pandas as pd
 import numpy as np
-
-def get_b03(nonce):
-    x = int(nonce, 16)
-    b0 = x >> 25
-    b3 = x >> 1 & 0x7F 
-    return b0, b3
+from common import *
 
 def scan_log_files(directory, out_file):
     mining_data = []
-
     dir_names = []
     for subdir in os.listdir(directory):
         name = os.path.basename(subdir)
@@ -40,7 +34,8 @@ def scan_log_files(directory, out_file):
                             if method == "mining.submit":
                                 # Extract relevant data such as mining pool name and nonce
                                 nonce = params[4]
-                                b0, b3 = get_b03(nonce)
+                                # b0, b3 = get_b03(nonce)
+                                b0, b3 = get_b12(nonce)
 
                                 mining_data.append([asic_type, b0, b3])
 
@@ -56,14 +51,14 @@ def scan_log_files(directory, out_file):
 log_directory = os.path.join(os.getcwd(), "database/nonce_log") 
 
 # Specify the output file for the NumPy array
-out_file = os.path.join(os.getcwd(), "database/mining_data.npy")
+out_file = os.path.join(os.getcwd(), "database/mining_data_b12.npy")
 
 # Call the function to scan log files
-# scan_log_files(log_directory, out_file)
+scan_log_files(log_directory, out_file)
 
-# Load the data from the file
-mining_data = np.load(out_file)
+# # Load the data from the file
+# mining_data = np.load(out_file)
 
-# Access the data as needed
-print(mining_data)
-print(np.shape(mining_data))
+# # Access the data as needed
+# print(mining_data)
+# print(np.shape(mining_data))

@@ -142,3 +142,6 @@ dmypy.json
 .DS_Store
 /database/nonce_log
 database/mining_data.npy
+/nonce/refdoc/work-report
+nonce-cluster.rar
+database/mining_data_b12.npy
